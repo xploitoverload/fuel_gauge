@@ -24,10 +24,18 @@ If you're working with the **bq34z100-PWR-R2** and don't want to spend hours dig
 
 Feel free to modify it according to your battery profile and hardware design.
 
+## Uses
+```bash
+git clone https://github.com/xploitoverload/fuel_gauge.git
+cd fuel_gauge
+make
+./gauge_test # use --configure if you want
+```
+
 ## Acknowledgements
 > Special thanks to the people who guided and supported this work
 - **Arunkumar Pal**  (Lead Hardware Engineer)
-- **Bhavin Darji ** (Hardware Master Engineer)
+- **Bhavin Darji** (Hardware Master Engineer)
 - **Jay Sapra** (Senior Hardware Engineer)
 
 And finally...
