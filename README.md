@@ -31,6 +31,15 @@ cd fuel_gauge
 make
 ./gauge_test # use --configure if you want
 ```
+**USEFUL COMMANDS**
+![[Pasted image 20260712193342.png]]
+
+![[Pasted image 20260712193619.png]]
+![[Pasted image 20260712193641.png]]
+
+![[Pasted image 20260712193712.png]]
+![[Pasted image 20260712193741.png]]
+
 
 ## Acknowledgements
 > Special thanks to the people who guided and supported this work
