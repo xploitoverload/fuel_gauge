@@ -30,7 +30,7 @@
 #define DESIGN_CAP_RAW      5000        // mAh = 10000 / CURR_SCALE
 #define DESIGN_ENERGY_CWH   3700        // cWh = 5Ah * 7.4V * 100
 #define TERMINATE_VOLTAGE   3200        // mV per cell (6400mV pack / 2 cells)
-#define TAPER_CURRENT       100         // mA
+#define TAPER_CURRENT       200         // mA
 
 // ── Standard command codes (TRM Table 2-1) ────────────────────
 #define CMD_SOC             0x02
