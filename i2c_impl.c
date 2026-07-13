@@ -53,6 +53,16 @@
 #define CMD_CHG_VOLTAGE     0x30        // ChargeVoltage()
 #define CMD_CHG_CURRENT     0x32        // ChargeCurrent()
 
+
+// ── CC Gain calibration (subclass 0x68) ──────────────────────
+#define CMD_SEL_SUBCLASS     0x3E
+#define CMD_SEL_BLOCK        0x3F
+#define CMD_BLOCK_DATA_START 0x40
+#define CMD_CHECKSUM         0x60
+#define SUBCLASS_CC_GAIN     0x68
+#define CC_GAIN_BLOCK        0x00
+#define BLOCK_SIZE           32
+
 // ── Control() subcommands (TRM Table 2-2) ─────────────────────
 #define SUB_CTRL_STATUS     0x0000
 #define SUB_FW_VERSION      0x0002
