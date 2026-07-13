@@ -234,6 +234,172 @@ static int configure_gauge(void *pHandle)
     return 0;
 }
 
+
+// ── CC Gain functions ─────────────────────────────────────────
+
+static void select_subclass_block(void *pHandle, unsigned char nSubclass, unsigned char nBlock)
+{
+    unsigned char pData[1];
+    pData[0] = nSubclass;
+    gauge_write(pHandle, CMD_SEL_SUBCLASS, pData, 1);
+    pData[0] = nBlock;
+    gauge_write(pHandle, CMD_SEL_BLOCK, pData, 1);
+}
+
+static unsigned char calculate_block_checksum(unsigned char *pData, unsigned char nLength)
+{
+    unsigned char nSum = 0x00;
+    for (unsigned char n = 0; n < nLength; n++)
+        nSum += pData[n];
+    return 0xFF - nSum;
+}
+
+static int read_cc_gain(void *pHandle, unsigned int *pGain)
+{
+    unsigned char pBuffer[BLOCK_SIZE];
+    int ret;
+    
+    // Step 1: Select subclass 0x68, block 0
+    select_subclass_block(pHandle, SUBCLASS_CC_GAIN, CC_GAIN_BLOCK);
+    usleep(10000); // Wait 10ms for gauge to copy data to buffer
+    
+    // Step 2: Read 32 bytes into buffer
+    ret = gauge_read(pHandle, CMD_BLOCK_DATA_START, pBuffer, BLOCK_SIZE);
+    if (ret != BLOCK_SIZE) {
+        printf("Failed to read CC Gain block (read %d bytes)\n", ret);
+        return -1;
+    }
+    
+    // Step 3: Extract CC Gain (4 bytes at offset 0)
+    *pGain = (pBuffer[0] << 24) | (pBuffer[1] << 16) | 
+             (pBuffer[2] << 8) | pBuffer[3];
+    
+    return 0;
+}
+
+static int write_cc_gain(void *pHandle, unsigned int nNewGain)
+{
+    unsigned char pBuffer[BLOCK_SIZE];
+    unsigned char nChecksum, nReadChecksum;
+    int ret;
+    
+    printf("[CC_GAIN] Setting CC Gain to 0x%08X\n", nNewGain);
+    
+    // Step 1: Select subclass 0x68, block 0
+    select_subclass_block(pHandle, SUBCLASS_CC_GAIN, CC_GAIN_BLOCK);
+    usleep(10000); // Wait 10ms
+    
+    // Step 2: Read entire 32-byte block
+    ret = gauge_read(pHandle, CMD_BLOCK_DATA_START, pBuffer, BLOCK_SIZE);
+    if (ret != BLOCK_SIZE) {
+        printf("Failed to read block (read %d bytes)\n", ret);
+        return -1;
+    }
+    
+    // Dump current block (optional debug)
+    printf("  Current block (32 bytes):\n    ");
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        printf("%02X ", pBuffer[i]);
+        if ((i + 1) % 16 == 0 && i < BLOCK_SIZE - 1) printf("\n    ");
+    }
+    printf("\n");
+    
+    // Step 3: Replace first 4 bytes with new CC Gain
+    unsigned int old_gain = (pBuffer[0] << 24) | (pBuffer[1] << 16) | 
+                            (pBuffer[2] << 8) | pBuffer[3];
+    printf("  Old CC Gain: 0x%08X\n", old_gain);
+    
+    pBuffer[0] = (nNewGain >> 24) & 0xFF;
+    pBuffer[1] = (nNewGain >> 16) & 0xFF;
+    pBuffer[2] = (nNewGain >> 8) & 0xFF;
+    pBuffer[3] = nNewGain & 0xFF;
+    
+    // Step 4: Select subclass again
+    select_subclass_block(pHandle, SUBCLASS_CC_GAIN, CC_GAIN_BLOCK);
+    usleep(10000); // Wait 10ms
+    
+    // Step 5: Write entire 32-byte block back
+    ret = gauge_write(pHandle, CMD_BLOCK_DATA_START, pBuffer, BLOCK_SIZE);
+    if (ret != BLOCK_SIZE) {
+        printf("Failed to write block (wrote %d bytes)\n", ret);
+        return -2;
+    }
+    
+    // Step 6: Calculate checksum over entire 32-byte block
+    nChecksum = calculate_block_checksum(pBuffer, BLOCK_SIZE);
+    printf("  New checksum: 0x%02X\n", nChecksum);
+    
+    // Step 7: Write checksum to command 0x60
+    unsigned char pChecksumData[1] = {nChecksum};
+    ret = gauge_write(pHandle, CMD_CHECKSUM, pChecksumData, 1);
+    if (ret != 1) {
+        printf("Failed to write checksum\n");
+        return -3;
+    }
+    
+    // Step 8: Verify checksum (as Dominik suggested)
+    usleep(10000); // Wait 10ms
+    
+    // Select subclass again
+    select_subclass_block(pHandle, SUBCLASS_CC_GAIN, CC_GAIN_BLOCK);
+    usleep(10000); // Wait 10ms
+    
+    // Read back checksum
+    ret = gauge_read(pHandle, CMD_CHECKSUM, &nReadChecksum, 1);
+    if (ret != 1) {
+        printf("Failed to read back checksum\n");
+        return -4;
+    }
+    
+    printf("  Readback checksum: 0x%02X ", nReadChecksum);
+    if (nChecksum == nReadChecksum) {
+        printf("[MATCH] - Success!\n");
+    } else {
+        printf("[MISMATCH] - Failed!\n");
+        return -5;
+    }
+    
+    return 0; // Success
+}
+
+static void dump_cc_gain_block(void *pHandle)
+{
+    unsigned char pBuffer[BLOCK_SIZE];
+    unsigned int gain;
+    
+    printf("\n[CC_GAIN] Reading subclass 0x68, block 0...\n");
+    
+    if (read_cc_gain(pHandle, &gain) == 0) {
+        printf("  CC Gain (4 bytes at offset 0): 0x%08X\n", gain);
+    }
+    
+    // Read and display full block
+    select_subclass_block(pHandle, SUBCLASS_CC_GAIN, CC_GAIN_BLOCK);
+    usleep(10000);
+    
+    int ret = gauge_read(pHandle, CMD_BLOCK_DATA_START, pBuffer, BLOCK_SIZE);
+    if (ret == BLOCK_SIZE) {
+        printf("  Full 32-byte block:\n    ");
+        for (int i = 0; i < BLOCK_SIZE; i++) {
+            printf("%02X ", pBuffer[i]);
+            if ((i + 1) % 16 == 0 && i < BLOCK_SIZE - 1) printf("\n    ");
+        }
+        printf("\n");
+        
+        unsigned char checksum = calculate_block_checksum(pBuffer, BLOCK_SIZE);
+        printf("  Calculated checksum: 0x%02X\n", checksum);
+        
+        // Read stored checksum
+        unsigned char stored_checksum;
+        ret = gauge_read(pHandle, CMD_CHECKSUM, &stored_checksum, 1);
+        if (ret == 1) {
+            printf("  Stored checksum:    0x%02X ", stored_checksum);
+            printf((checksum == stored_checksum) ? "[MATCH]\n" : "[MISMATCH]\n");
+        }
+    }
+}
+
+
 // ── Main ──────────────────────────────────────────────────────
 
 int main(int argc, char *argv[])
