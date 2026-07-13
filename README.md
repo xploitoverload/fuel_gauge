@@ -29,8 +29,9 @@ Feel free to modify it according to your battery profile and hardware design.
 git clone https://github.com/xploitoverload/fuel_gauge.git
 cd fuel_gauge
 make
-./gauge_test # use --configure if you want
-mv gauge_test gauge
+#Check if gauge is ready
+./gauge --diagnose
+
 # Read current CC Gain and display full block
 ./gauge --cc-gain
 
