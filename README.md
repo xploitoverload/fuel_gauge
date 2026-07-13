@@ -30,16 +30,19 @@ git clone https://github.com/xploitoverload/fuel_gauge.git
 cd fuel_gauge
 make
 ./gauge_test # use --configure if you want
+mv gauge_test gauge
+# Read current CC Gain and display full block
+./gauge --cc-gain
+
+# Set new CC Gain (hex value)
+./gauge --set-cc-gain 0x12345678
+
+# Configure gauge (existing functionality)
+./gauge --configure
+
+# Read all status (default)
+./gauge
 ```
-**USEFUL COMMANDS**
-![[Pasted image 20260712193342.png]]
-
-![[Pasted image 20260712193619.png]]
-![[Pasted image 20260712193641.png]]
-
-![[Pasted image 20260712193712.png]]
-![[Pasted image 20260712193741.png]]
-
 
 ## Acknowledgements
 > Special thanks to the people who guided and supported this work
