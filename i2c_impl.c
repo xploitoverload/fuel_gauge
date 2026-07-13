@@ -128,10 +128,164 @@ void gauge_address(void *pHandle, unsigned char nAddress)
 
 // ── Helpers ───────────────────────────────────────────────────
 
-static void unseal(void *pHandle)
+// static void unseal(void *pHandle)
+// {
+//     gauge_control(pHandle, SUB_UNSEAL_1); usleep(200000);
+//     gauge_control(pHandle, SUB_UNSEAL_2); usleep(300000);
+// }
+
+// ── FIXED Unseal with Verification ────────────────────────────
+static bool unseal_with_verify(void *pHandle)
 {
-    gauge_control(pHandle, SUB_UNSEAL_1); usleep(200000);
-    gauge_control(pHandle, SUB_UNSEAL_2); usleep(300000);
+    int retries = 3;
+    unsigned int cs;
+    
+    printf("Unsealing gauge...\n");
+    
+    while (retries--) {
+        // Send unseal commands
+        gauge_control(pHandle, SUB_UNSEAL_1);
+        usleep(200000);  // 200ms - CRITICAL!
+        
+        gauge_control(pHandle, SUB_UNSEAL_2);
+        usleep(300000);  // 300ms - CRITICAL!
+        
+        // Verify unseal worked
+        cs = gauge_control(pHandle, SUB_CTRL_STATUS);
+        if (!((cs >> 13) & 1)) {
+            printf("Unseal successful! (CTRL_STATUS=0x%04X)\n", cs);
+            return true;
+        }
+        
+        printf("Unseal attempt failed (SS=%d), retrying...\n", (cs>>13)&1);
+    }
+    
+    printf("FATAL: Could not unseal gauge!\n");
+    return false;
+}
+
+// ── NEW: Exit CFG UPDATE Mode ─────────────────────────────────
+static bool exit_cfg_update(void *pHandle)
+{
+    unsigned int flags;
+    int attempts = 0;
+    
+    printf("Exiting CFG UPDATE mode...\n");
+    
+    // Try SOFT_RESET first (0x0042)
+    gauge_control(pHandle, 0x0042);
+    usleep(100000);
+    
+    do {
+        flags = gauge_cmd_read(pHandle, CMD_FLAGS);
+        if (flags & 0x0010) {  // CF bit
+            usleep(100000);
+            attempts++;
+            printf("  CF still set, waiting... (attempt %d)\n", attempts);
+            
+            // Try reset again if stuck
+            if (attempts > 5) {
+                gauge_control(pHandle, 0x0042);
+                usleep(100000);
+            }
+        }
+    } while ((flags & 0x0010) && (attempts < 15));
+    
+    if (flags & 0x0010) {
+        printf("✗ FAILED to exit CFG UPDATE mode!\n");
+        return false;
+    }
+    
+    printf("✓ Exited CFG UPDATE mode (Flags=0x%04X)\n", flags);
+    return true;
+}
+
+// ── NEW: Verify Current Reading ──────────────────────────────
+static void verify_current_reading(void *pHandle)
+{
+    printf("\n--- Current Reading Diagnostics ---\n");
+    
+    // Read raw current from command 0x10
+    unsigned char data[2];
+    gauge_read(pHandle, 0x10, data, 2);
+    int current = (data[1] << 8) | data[0];
+    if (current > 32767) current -= 65536;
+    printf("  Raw Current (0x10): 0x%02X%02X = %d mA\n", data[1], data[0], current);
+    
+    // Read average current from 0x0A
+    gauge_read(pHandle, 0x0A, data, 2);
+    int avg_current = (data[1] << 8) | data[0];
+    if (avg_current > 32767) avg_current -= 65536;
+    printf("  Raw Avg Current (0x0A): 0x%02X%02X = %d mA\n", data[1], data[0], avg_current);
+    
+    // Read flags
+    unsigned int flags = gauge_cmd_read(pHandle, CMD_FLAGS);
+    printf("  Flags: 0x%04X (CF=%d, DSG=%d, CHG=%d, FC=%d)\n", 
+           flags, (flags>>4)&1, flags&1, (flags>>8)&1, (flags>>9)&1);
+    
+    // Read CC Gain
+    unsigned int cc_gain;
+    if (read_cc_gain(pHandle, &cc_gain) == 0) {
+        printf("  CC Gain: 0x%08X\n", cc_gain);
+        
+        // Check if CC Gain looks reasonable (typical range for 10mΩ)
+        if (cc_gain < 0x4000 || cc_gain > 0x8000) {
+            printf("WARNING: CC Gain value seems unusual! (Expected 0x4000-0x8000)\n");
+        }
+    }
+    
+    // Read CurrScale
+    unsigned int cs_val = gauge_cmd_read(pHandle, CMD_CURR_SCALE_REG) & 0xFF;
+    printf("  CurrScale: %d\n", cs_val);
+    
+    if (current == 0 && avg_current == 0) {
+        printf("\n  Current readings are ZERO! Possible causes:\n");
+        printf("     1. Gauge is sealed (SS=1) - check unseal\n");
+        printf("     2. Gauge in CFG UPDATE mode (CF=1) - exit config mode\n");
+        printf("     3. CC Gain is incorrect - check value\n");
+        printf("     4. No current flowing - check hardware connection\n");
+    }
+}
+
+// ── NEW: Complete Gauge Initialization ──────────────────────
+static bool initialize_gauge(void *pHandle)
+{
+    printf("\n=== Initializing Gauge ===\n");
+    
+    // Step 1: Check if sealed
+    unsigned int cs = gauge_control(pHandle, SUB_CTRL_STATUS);
+    if ((cs >> 13) & 1) {
+        printf("Gauge is sealed. Unsealing...\n");
+        if (!unseal_with_verify(pHandle)) {
+            return false;
+        }
+    } else {
+        printf("Gauge is already unsealed.\n");
+    }
+    
+    // Step 2: Check if in CFG UPDATE mode
+    unsigned int flags = gauge_cmd_read(pHandle, CMD_FLAGS);
+    if (flags & 0x0010) {
+        printf("Gauge is in CFG UPDATE mode. Exiting...\n");
+        if (!exit_cfg_update(pHandle)) {
+            return false;
+        }
+    }
+    
+    // Step 3: Verify everything is working
+    printf("\n=== Verification ===\n");
+    cs = gauge_control(pHandle, SUB_CTRL_STATUS);
+    printf("CTRL_STATUS: 0x%04X (SS=%d)\n", cs, (cs>>13)&1);
+    flags = gauge_cmd_read(pHandle, CMD_FLAGS);
+    printf("Flags: 0x%04X (CF=%d)\n", flags, (flags>>4)&1);
+    
+    if (((cs >> 13) & 1) == 0 && ((flags >> 4) & 1) == 0) {
+        printf("✓ Gauge is ready!\n");
+        return true;
+    } else {
+        printf("✗ Gauge is NOT ready!\n");
+        return false;
+    }
 }
 
 static const char *get_status(unsigned int flags)
@@ -419,39 +573,47 @@ int main(int argc, char *argv[])
     unsigned int cs = gauge_control(pHandle, SUB_CTRL_STATUS);
     printf("FW_VERSION   = 0x%04X\n", fw);
     printf("CTRL_STATUS  = 0x%04X  SS=%d\n", cs, (cs>>13)&1);
+    // ── Initialize gauge FIRST ──────────────────────────────
+    if (!initialize_gauge(pHandle)) {
+        printf("FATAL: Gauge initialization failed!\n");
+        close(i2c.nI2C);
+        return 1;
+    }
 
     // Unseal if sealed
-    if ((cs >> 13) & 1) {
-        printf("Unsealing...\n");
-        unseal(pHandle);
-    }
+    // if ((cs >> 13) & 1) {
+    //     printf("Unsealing...\n");
+    //     unseal(pHandle);
+    // }
 
     // Configure if requested
     if (argc > 1) {
         if (strcmp(argv[1], "--configure") == 0) {
             int r = configure_gauge(pHandle);
             if (r == 0) {
-                printf("\nResetting gauge...\n");
+                printf("\nConfiguration successful!\n");
+                printf("Exiting CFG UPDATE mode...\n");
+                exit_cfg_update(pHandle);
+                printf("Resetting gauge...\n");
                 gauge_control(pHandle, SUB_RESET);
                 sleep(3);
-                // Re-unseal after reset
-                unseal(pHandle);
+                // Re-initialize after reset
+                if (!initialize_gauge(pHandle)) {
+                    printf("ERROR: Gauge not responsive after reset!\n");
+                }
             }
         }
         else if (strcmp(argv[1], "--cc-gain") == 0) {
-            // Display CC Gain
             dump_cc_gain_block(pHandle);
             close(i2c.nI2C);
             return 0;
         }
         else if (strcmp(argv[1], "--set-cc-gain") == 0 && argc > 2) {
-            // Set CC Gain from hex string
             unsigned int new_gain;
             if (sscanf(argv[2], "%x", &new_gain) == 1) {
                 int ret = write_cc_gain(pHandle, new_gain);
                 if (ret == 0) {
                     printf("\nCC Gain updated successfully!\n");
-                    // Verify by reading back
                     unsigned int verify_gain;
                     if (read_cc_gain(pHandle, &verify_gain) == 0) {
                         printf("Verification: 0x%08X %s\n", 
@@ -463,12 +625,17 @@ int main(int argc, char *argv[])
                 }
             } else {
                 printf("Invalid gain value. Use hex format: 0xXXXXXXXX\n");
-                printf("Example: %s --set-cc-gain 0x12345678\n", argv[0]);
             }
             close(i2c.nI2C);
             return 0;
         }
+        else if (strcmp(argv[1], "--diagnose") == 0) {
+            verify_current_reading(pHandle);
+            close(i2c.nI2C);
+            return 0;
+        }
     }
+
 
     // ── Read and print all live values ────────────────────────
     unsigned int voltage   = gauge_cmd_read(pHandle, CMD_VOLTAGE);
@@ -522,6 +689,11 @@ int main(int argc, char *argv[])
         printf("\n  NOTE: FCC=%u mAh — run learning cycle for accuracy\n", fcc);
 
     printf("========================================\n");
+
+    if (current == 0 && avg_current == 0) {
+        printf("\n WARNING: Current readings are ZERO!\n");
+        printf("  Run './gauge --diagnose' for detailed diagnostics\n");
+    }
 
     close(i2c.nI2C);
     return 0;
