@@ -427,14 +427,46 @@ int main(int argc, char *argv[])
     }
 
     // Configure if requested
-    if (argc > 1 && strcmp(argv[1], "--configure") == 0) {
-        int r = configure_gauge(pHandle);
-        if (r == 0) {
-            printf("\nResetting gauge...\n");
-            gauge_control(pHandle, SUB_RESET);
-            sleep(3);
-            // Re-unseal after reset
-            unseal(pHandle);
+    if (argc > 1) {
+        if (strcmp(argv[1], "--configure") == 0) {
+            int r = configure_gauge(pHandle);
+            if (r == 0) {
+                printf("\nResetting gauge...\n");
+                gauge_control(pHandle, SUB_RESET);
+                sleep(3);
+                // Re-unseal after reset
+                unseal(pHandle);
+            }
+        }
+        else if (strcmp(argv[1], "--cc-gain") == 0) {
+            // Display CC Gain
+            dump_cc_gain_block(pHandle);
+            close(i2c.nI2C);
+            return 0;
+        }
+        else if (strcmp(argv[1], "--set-cc-gain") == 0 && argc > 2) {
+            // Set CC Gain from hex string
+            unsigned int new_gain;
+            if (sscanf(argv[2], "%x", &new_gain) == 1) {
+                int ret = write_cc_gain(pHandle, new_gain);
+                if (ret == 0) {
+                    printf("\nCC Gain updated successfully!\n");
+                    // Verify by reading back
+                    unsigned int verify_gain;
+                    if (read_cc_gain(pHandle, &verify_gain) == 0) {
+                        printf("Verification: 0x%08X %s\n", 
+                               verify_gain,
+                               (verify_gain == new_gain) ? "[OK]" : "[FAIL]");
+                    }
+                } else {
+                    printf("CC Gain update failed with error %d\n", ret);
+                }
+            } else {
+                printf("Invalid gain value. Use hex format: 0xXXXXXXXX\n");
+                printf("Example: %s --set-cc-gain 0x12345678\n", argv[0]);
+            }
+            close(i2c.nI2C);
+            return 0;
         }
     }
 
