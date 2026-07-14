@@ -58,6 +58,7 @@ sleep 0.3
 i2cget -y 2 0x55 0x00 w
 # Output: 0x4015 means UNSEALED (SS=0)
 ```
+![](img/9.webp)
 
 ---
 
@@ -70,6 +71,9 @@ sleep 0.1
 ```
 
 ---
+
+![Step 5 & Step 6](img/5.webp)
+
 
 ### **STEP 5: Configure Subclass 0x30, Block 0**
 
@@ -116,7 +120,6 @@ echo "Block 0 checksum: 0x$(printf "%02X" $checksum)"
 i2ctransfer -y 2 w2@0x55 0x60 $checksum
 sleep 0.01
 ```
-
 ---
 
 ### **STEP 6: Configure Subclass 0x30, Block 1**
@@ -188,6 +191,8 @@ i2ctransfer -y 2 w2@0x55 0x60 $checksum
 sleep 0.01
 ```
 
+![](img/7.webp)
+
 ---
 
 ### **STEP 8: Configure Subclass 0x50 (Gas Gauging|IT Cfg)**
@@ -257,6 +262,7 @@ echo "CC Gain checksum: 0x$(printf "%02X" $checksum)"
 i2ctransfer -y 2 w2@0x55 0x60 $checksum
 sleep 0.01
 ```
+![](img/8.webp)
 
 ---
 
@@ -281,6 +287,7 @@ sleep 0.1
 i2ctransfer -y 2 w3@0x55 0x00 0x42 0x00
 sleep 0.05
 ```
+![](img/4.webp)
 
 ---
 
